@@ -1,20 +1,20 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2024 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file           : main.c
+ * @brief          : Main program body
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2024 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
@@ -43,8 +43,6 @@
 TIM_HandleTypeDef htim1;
 
 /* USER CODE BEGIN PV */
-uint32_t resetCNT;
-uint32_t setCNT;
 
 /* USER CODE END PV */
 
@@ -93,24 +91,24 @@ int main(void)
   MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
 
-  TIM1->PSC = 240;
-  TIM1->ARR = 400;
-  TIM1->CCR4 = 200;
-  HAL_TIM_PWM_Start_IT(&htim1,TIM_CHANNEL_4);
-  HAL_TIM_Base_Start_IT(&htim1);
+	TIM1->PSC = 240;
+	TIM1->ARR = 400;
+	TIM1->CCR4 = 100;
+	HAL_TIM_PWM_Start_IT(&htim1,TIM_CHANNEL_4);
+	HAL_TIM_Base_Start_IT(&htim1);
 
-  // HAL_GPIO_WritePin(LED_Green_GPIO_Port, LED_Green_Pin, GPIO_PIN_SET);
+	// HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_SET);
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
+	while (1)
+	{
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-  }
+	}
   /* USER CODE END 3 */
 }
 
@@ -231,7 +229,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, LED_BLUE_Pin|LED_Green_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, LED_BLUE_Pin|LED_GREEN_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : BUTTON_1_Pin */
   GPIO_InitStruct.Pin = BUTTON_1_Pin;
@@ -239,8 +237,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(BUTTON_1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : LED_BLUE_Pin LED_Green_Pin */
-  GPIO_InitStruct.Pin = LED_BLUE_Pin|LED_Green_Pin;
+  /*Configure GPIO pins : LED_BLUE_Pin LED_GREEN_Pin */
+  GPIO_InitStruct.Pin = LED_BLUE_Pin|LED_GREEN_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -256,32 +254,59 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
+	uint32_t debug1;
+	uint32_t debug2;
+	HAL_TIM_PWM_Stop_IT(&htim1, TIM_CHANNEL_4);
+
+	if (HAL_GPIO_ReadPin(LED_BLUE_GPIO_Port, LED_BLUE_Pin) == GPIO_PIN_RESET){
+
+		HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(LED_BLUE_GPIO_Port, LED_BLUE_Pin,GPIO_PIN_SET);
+	}
+
+	debug1 = HAL_GetTick();
+	HAL_Delay(250);
+	debug2 = HAL_GetTick();
 
 
-	static int indexCCR = 0;
+	HAL_TIM_PWM_Start_IT(&htim1, TIM_CHANNEL_4);
+
+	/*static int indexCCR = 0;
 	int CCRs[] = {1, 99, 199, 299, 399};
 	TIM1->CCR4=CCRs[indexCCR];
 	if (indexCCR < 4){
 		indexCCR++;
 	} else {
 		indexCCR = 0;
-	}
+	}*/
 }
 
 void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim){
-	resetCNT = TIM1->CNT;
-	HAL_GPIO_WritePin(LED_Green_GPIO_Port, LED_Green_Pin,GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin,GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(LED_BLUE_GPIO_Port, LED_BLUE_Pin,GPIO_PIN_RESET);
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
-	setCNT = TIM1->CNT;
 	static long counter = 0;
-	HAL_GPIO_WritePin(LED_Green_GPIO_Port, LED_Green_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_SET);
 	HAL_GPIO_WritePin(LED_BLUE_GPIO_Port, LED_BLUE_Pin,GPIO_PIN_SET);
-
-	counter++;
 }
+
+void HAL_Delay(uint32_t Delay)
+{
+	uint32_t tickCurrent;
+	uint32_t tickstart = HAL_GetTick();
+	uint32_t wait = Delay;
+
+	while(1){
+		tickCurrent = HAL_GetTick();
+
+		if ((tickCurrent - tickstart) >= wait){
+			break;
+		}
+	}
+}
+
 /* USER CODE END 4 */
 
 /**
@@ -291,11 +316,11 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
+	/* User can add his own implementation to report the HAL error return state */
+	__disable_irq();
+	while (1)
+	{
+	}
   /* USER CODE END Error_Handler_Debug */
 }
 
@@ -310,7 +335,7 @@ void Error_Handler(void)
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
-  /* User can add his own implementation to report the file name and line number,
+	/* User can add his own implementation to report the file name and line number,
      ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
   /* USER CODE END 6 */
 }
