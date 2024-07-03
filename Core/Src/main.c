@@ -46,9 +46,10 @@ I2C_HandleTypeDef hi2c1;
 
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim3;
 
 /* USER CODE BEGIN PV */
-bool continueIt = false;
+bool continueIt = false;	// Variable for Blocking in Delay-Function
 bool eyesInverted = false;
 /* USER CODE END PV */
 
@@ -58,12 +59,14 @@ static void MX_GPIO_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
 void DelayTime(uint32_t);
 void Hug();
 void EatCookie();
 void BeUncomfortable();
-void FlashEyes(int, bool);
+void FlashEyesSynchronous(int);
+void FlashEyesAsynchronous(int, int);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -103,14 +106,24 @@ int main(void)
 	MX_TIM1_Init();
 	MX_TIM2_Init();
 	MX_I2C1_Init();
+	MX_TIM3_Init();
 	/* USER CODE BEGIN 2 */
 
+// Hardcoded Prescaler, Autoreload and Capturecompare Registervalues for TIM1 and TIM3
 	TIM1->PSC = 240;
 	TIM1->ARR = 400;
 	TIM1->CCR4 = 100;
-	HAL_TIM_PWM_Start_IT(&htim1,TIM_CHANNEL_4);
-	HAL_TIM_Base_Start_IT(&htim1);
+	TIM3->PSC = 240;
+	TIM3->ARR = 400;
+	TIM3->CCR4 = 100;
 
+// Start Timers and PWM Signal of TIM1 and TIM3
+	HAL_TIM_PWM_Start_IT(&htim1,TIM_CHANNEL_4);
+	HAL_TIM_PWM_Start_IT(&htim3,TIM_CHANNEL_4);
+	HAL_TIM_Base_Start_IT(&htim1);
+	HAL_TIM_Base_Start_IT(&htim3);
+
+// Addressvariables for I2C-Commuication
 	uint16_t gyroAddress = 0x21<<1;
 	uint16_t gyroRegister = 0x01;
 	uint16_t gyroControllRegister = 0x13;
@@ -119,25 +132,27 @@ int main(void)
 	uint16_t magControllRegister = 0x2A;
 	uint16_t magMagControllRegister = 0x5B;
 
-	uint8_t gyroData[6] = {0,0,0,0,0,0};
-	uint8_t gyroControllData[2] = {gyroControllRegister,0b00000010};
-	uint8_t magData[6] = {0,0,0,0,0,0};
-	uint8_t magDataRdy = 0;
-	uint8_t magControllData[2] = {magControllRegister,0b00000001};
-	uint8_t magMagControllData[2] = {magMagControllRegister,0b00000001};
-	HAL_StatusTypeDef statusGyro=HAL_ERROR;
-	HAL_StatusTypeDef statusMag=HAL_ERROR;
+// Datavariables for I2C-Communication
+	uint8_t gyroData[6] = {0,0,0,0,0,0};									// Data-Buffer Gyroscope
+	uint8_t gyroControllData[2] = {gyroControllRegister,0b00000010};		// Data to be sent to Gyro CTRL_REG1
 
-	int16_t gyroX;
+	uint8_t magData[6] = {0,0,0,0,0,0};										// Data-Buffer Magnetometer
+	uint8_t magControllData[2] = {magControllRegister,0b00000001};			// Data to be sent to Magnetometer CTRL_REG1
+	uint8_t magMagControllData[2] = {magMagControllRegister,0b00000001};	// Data to be sent to Magnetometer M_CTRL_REG1
+
+	HAL_StatusTypeDef statusGyro;
+	HAL_StatusTypeDef statusMag;
+
+	//int16_t gyroX;
 	int16_t gyroY;
-	int16_t gyroZ;
+	//int16_t gyroZ;
 
 	int16_t magX;
 	int16_t magY;
 	int16_t magZ;
 	uint16_t magAbs;
 
-	// HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_SET);
+// Configure Gyroscope and Magnetometer via I2C-Communication
 	statusGyro = HAL_I2C_Master_Transmit(&hi2c1, gyroAddress, &gyroControllData[0], 2, 100);
 	statusMag = HAL_I2C_Master_Transmit(&hi2c1, magAddress, &magControllData[0], 2, 100);
 	statusMag = HAL_I2C_Master_Transmit(&hi2c1, magAddress, &magMagControllData[0], 2, 100);
@@ -150,31 +165,43 @@ int main(void)
 		/* USER CODE END WHILE */
 
 		/* USER CODE BEGIN 3 */
-		//HAL_I2C_Master_Transmit(&hi2c1, gyroAddress, &gyroRegister, 1, 100);
-		//HAL_I2C_Master_Receive(&hi2c1, gyroAddress, &gyroData[0], 6, 100);
+
+	// Read Status from Gyroscope and Magnetometer
 		statusGyro = HAL_I2C_IsDeviceReady(&hi2c1, gyroAddress, 1, 100);
 		statusMag = HAL_I2C_IsDeviceReady(&hi2c1, magAddress, 1, 100);
+
+	// If Status OK read AngularRate Data from Gyroscope DataOutputRRegisters
 		if(statusGyro == HAL_OK){
 			HAL_I2C_Mem_Read(&hi2c1, gyroAddress, gyroRegister, 1, &gyroData[0], 6, 100);
-			gyroX = (gyroData[0]<<8)+gyroData[1];
+			//gyroX = (gyroData[0]<<8)+gyroData[1];
+
+		// Convert 8MSB and 8LSB to 16 bit signed integer
 			gyroY = (gyroData[2]<<8)+gyroData[3];
-			gyroZ = (gyroData[4]<<8)+gyroData[5];
+			//gyroZ = (gyroData[4]<<8)+gyroData[5];
+
+		// React if agularRate is higher than threshhold
 			if(abs(gyroY)>2000){
 				BeUncomfortable();
 			}
 		}
+
+	// If Status OK read Magnetometer Data from DataOutputRRegisters
 		if(statusMag == HAL_OK){
-			HAL_I2C_Mem_Read(&hi2c1, magAddress, magRegister-1, 1, &magDataRdy, 1, 100);
 			HAL_I2C_Mem_Read(&hi2c1, magAddress, magRegister, 1, &magData[0], 6, 100);
+
+		// Convert 8MSB and 8LSB to 16 bit signed integer
 			magX = (magData[0]<<8)+magData[1];
 			magY = (magData[2]<<8)+magData[3];
 			magZ = (magData[4]<<8)+magData[5];
+
+		// React if magnetic field is stronger than threshhold
 			magAbs = (uint16_t)(abs(magX)+abs(magY)+abs(magZ));
 			if(magAbs>5000){
 				EatCookie();
 			}
 		}
 
+	// Delay to reduce workload on sensors and I2C-Bus
 		DelayTime(500);
 	}
 	/* USER CODE END 3 */
@@ -385,6 +412,54 @@ static void MX_TIM2_Init(void)
 }
 
 /**
+ * @brief TIM3 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_TIM3_Init(void)
+{
+
+	/* USER CODE BEGIN TIM3_Init 0 */
+
+	/* USER CODE END TIM3_Init 0 */
+
+	TIM_MasterConfigTypeDef sMasterConfig = {0};
+	TIM_OC_InitTypeDef sConfigOC = {0};
+
+	/* USER CODE BEGIN TIM3_Init 1 */
+
+	/* USER CODE END TIM3_Init 1 */
+	htim3.Instance = TIM3;
+	htim3.Init.Prescaler = 4800;
+	htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+	htim3.Init.Period = 100;
+	htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+	htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+	if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+	sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+	if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	sConfigOC.OCMode = TIM_OCMODE_PWM1;
+	sConfigOC.Pulse = 0;
+	sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+	sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+	if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_4) != HAL_OK)
+	{
+		Error_Handler();
+	}
+	/* USER CODE BEGIN TIM3_Init 2 */
+
+	/* USER CODE END TIM3_Init 2 */
+
+}
+
+/**
  * @brief GPIO Initialization Function
  * @param None
  * @retval None
@@ -427,38 +502,54 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 
+// Disable Interrupts on line EXTIO_1
 	HAL_NVIC_DisableIRQ(EXTI0_1_IRQn);
 
+// React to button press
 	Hug();
 
+// Clear pending interrupts and Enable Interrupts on line EXTIO_1 again
 	__HAL_GPIO_EXTI_CLEAR_IT(GPIO_Pin);
 	HAL_NVIC_EnableIRQ(EXTI0_1_IRQn);
 }
 
 void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim){
+// turn Off Green LED on falling Edge of PWM signal (TIM1)
 	if(htim == &htim1){
-		if(!eyesInverted){
+
 			HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin,GPIO_PIN_RESET);
+	} else if(htim == &htim3){
+
+
+// turn Off Blue LED on falling Edge of PWM signal (TIM3) (turn on if in eyesInverted mode)
+		if(!eyesInverted){
+
 			HAL_GPIO_WritePin(LED_BLUE_GPIO_Port, LED_BLUE_Pin,GPIO_PIN_RESET);
 		} else {
-			HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin,GPIO_PIN_RESET);
+
 			HAL_GPIO_WritePin(LED_BLUE_GPIO_Port, LED_BLUE_Pin,GPIO_PIN_SET);
 		}
 	}
-
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
+// turn On Green LED on rising Edge of PWM signal (TIM1)
 	if (htim == &htim1){
+
+		HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_SET);
+	} else if(htim == &htim3){
+
+// turn On Blue LED on rising Edge of PWM signal (TIM3) (turn off if in eyesInverted mode)
 		if(!eyesInverted){
-			HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_SET);
+
 			HAL_GPIO_WritePin(LED_BLUE_GPIO_Port, LED_BLUE_Pin,GPIO_PIN_SET);
 		} else {
-			HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_SET);
+
 			HAL_GPIO_WritePin(LED_BLUE_GPIO_Port, LED_BLUE_Pin,GPIO_PIN_RESET);
 		}
-
+// set Flag to exit infinite loop in Delay function of rising Edge of PWM-Signal (TIM2)
 	} else if (htim == &htim2){
+
 		continueIt = true;
 	}
 }
@@ -466,32 +557,45 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 void DelayTime(uint32_t delay)
 {
 	continueIt = false;
+// Configure and Start Timer (TIM2) for Delay-Function
+	TIM2->PSC = 4800;
 	TIM2->ARR = delay*10;
 	TIM2->CCR1 = delay*10;
 	TIM2->CNT = 0;
 	HAL_TIM_Base_Start_IT(&htim2);
 
+// Enter infinite loop for blocking
 	while(!continueIt){
 
 	}
+
+// Stop Timer (TIM2)
 	HAL_TIM_Base_Stop_IT(&htim2);
 }
 
 void Hug(){
-
+// Stop TIMERs and PWM-Signals TIM1 and TIM3 to fully turn on/off the Green and Blue LED
 	HAL_TIM_PWM_Stop_IT(&htim1, TIM_CHANNEL_4);
+	HAL_TIM_PWM_Stop_IT(&htim3, TIM_CHANNEL_4);
 	HAL_TIM_Base_Stop_IT(&htim1);
+	HAL_TIM_Base_Stop_IT(&htim3);
 
+// Ensure that Green and Blue LEDs are on
 	if (HAL_GPIO_ReadPin(LED_BLUE_GPIO_Port, LED_BLUE_Pin) == GPIO_PIN_RESET){
-
-		HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_SET);
 		HAL_GPIO_WritePin(LED_BLUE_GPIO_Port, LED_BLUE_Pin,GPIO_PIN_SET);
 	}
+	if (HAL_GPIO_ReadPin(LED_GREEN_GPIO_Port, LED_GREEN_Pin) == GPIO_PIN_RESET){
+		HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_SET);
+	}
 
+// Wait
 	DelayTime(500);
 
+// Start Timers and PWM-Signals TIM1 and TIM3 again
 	HAL_TIM_PWM_Start_IT(&htim1, TIM_CHANNEL_4);
+	HAL_TIM_PWM_Start_IT(&htim3, TIM_CHANNEL_4);
 	HAL_TIM_Base_Start_IT(&htim1);
+	HAL_TIM_Base_Start_IT(&htim3);
 
 }
 
@@ -499,7 +603,7 @@ void EatCookie(){
 
 	HAL_NVIC_DisableIRQ(EXTI0_1_IRQn);
 
-	FlashEyes(2500, true);
+	FlashEyesSynchronous(2500);
 
 	__HAL_GPIO_EXTI_CLEAR_IT(BUTTON_1_Pin);
 	HAL_NVIC_EnableIRQ(EXTI0_1_IRQn);
@@ -510,9 +614,7 @@ void BeUncomfortable(){
 	HAL_NVIC_DisableIRQ(EXTI0_1_IRQn);
 	eyesInverted = true;
 
-	FlashEyes(2000, false);
-
-	FlashEyes(2000, false);
+	FlashEyesAsynchronous(4000,3);
 
 	eyesInverted = false;
 
@@ -520,38 +622,90 @@ void BeUncomfortable(){
 	HAL_NVIC_EnableIRQ(EXTI0_1_IRQn);
 }
 
-void FlashEyes(int duration, bool onlyBrighten ){
+void FlashEyesSynchronous(int duration){
 
 	int initialCCR = TIM1->CCR4;
 	int maximumCCR = TIM1->ARR;
 	int stepCount = (maximumCCR-initialCCR)/10;
-	int countCycles = onlyBrighten?2:4;
-	int delayBetweenSteps = duration / stepCount / countCycles;
+	int delayBetweenSteps = duration / stepCount / 2;
 
 	for (int i = 0; i < stepCount; i++){
 		TIM1->CCR4 = initialCCR + i*10;
+		TIM3->CCR4 = TIM1->CCR4;
 		DelayTime(delayBetweenSteps);
 	}
 
 	for (int i = 0; i < stepCount; i++){
 		TIM1->CCR4 = maximumCCR-i*10;
+		TIM3->CCR4 = TIM1->CCR4;
 		DelayTime(delayBetweenSteps);
 	}
 
-	if(!onlyBrighten){
-		for (int i = 0; i < stepCount; i++){
-			if ((initialCCR - i*10)<1) TIM1->CCR4 = 1;
-			else TIM1->CCR4 = initialCCR - i*10;
+	TIM1->CCR4 = initialCCR;
+	TIM3->CCR4 = TIM1->CCR4;
+}
+
+void FlashEyesAsynchronous(int duration, int flashCount){
+	int initialCCR1 = TIM1->CCR4;
+	int maximumCCR = TIM1->ARR;
+
+	int initialCCR3 = maximumCCR-initialCCR1;
+
+	int medianCCR = maximumCCR/2;
+	int stepCountIni = (medianCCR - initialCCR1)/10;
+	int stepCount = medianCCR / 10;
+	int delayBetweenSteps = duration / (2*stepCountIni + 2*stepCount + 4*stepCount*flashCount);
+
+	for(int i = 0; i<stepCountIni; i++){
+		TIM1->CCR4 = initialCCR1+i*10;
+		TIM3->CCR4 = initialCCR3-i*10;
+		DelayTime(delayBetweenSteps);
+	}
+
+	for(int i = 0; i<stepCount; i++){
+		TIM1->CCR4 = medianCCR-i*10;
+		TIM3->CCR4 = medianCCR-i*10;
+		DelayTime(delayBetweenSteps);
+	}
+
+	for (int c = 0; c < flashCount; c++){
+		for(int i = 0; i<2*stepCount; i++){
+			if(i == 0){
+				TIM1->CCR4 = 1;
+				TIM3->CCR4 = 1;
+			} else {
+				TIM1->CCR4 = i*10;
+				TIM3->CCR4 = i*10;
+			}
 			DelayTime(delayBetweenSteps);
 		}
 
-		for (int i = 1; i < stepCount; i++){
-			TIM1->CCR4 = i*10;
+		for(int i = 0; i<2*stepCount; i++){
+			TIM1->CCR4 = maximumCCR - i*10;
+			TIM3->CCR4 = maximumCCR - i*10;
 			DelayTime(delayBetweenSteps);
-			if(TIM1->CCR4==initialCCR) break;
 		}
 	}
-	TIM1->CCR4 = initialCCR;
+
+	for(int i = 0; i<stepCount; i++){
+		if(i == 0){
+			TIM1->CCR4 = 1;
+			TIM3->CCR4 = 1;
+		} else {
+			TIM1->CCR4 = i*10;
+			TIM3->CCR4 = i*10;
+		}
+		DelayTime(delayBetweenSteps);
+	}
+
+	for(int i = 0; i<stepCountIni; i++){
+		TIM1->CCR4 = medianCCR-i*10;
+		TIM3->CCR4 = medianCCR+i*10;
+		DelayTime(delayBetweenSteps);
+	}
+
+	TIM1->CCR4 = initialCCR1;
+	TIM3->CCR4 = initialCCR1;
 }
 /* USER CODE END 4 */
 
