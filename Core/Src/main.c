@@ -49,6 +49,7 @@ TIM_HandleTypeDef htim2;
 
 /* USER CODE BEGIN PV */
 bool continueIt = false;
+bool eyesInverted = false;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -61,6 +62,8 @@ static void MX_I2C1_Init(void);
 void DelayTime(uint32_t);
 void Hug();
 void EatCookie();
+void BeUncomfortable();
+void FlashEyes(int, bool);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -156,6 +159,9 @@ int main(void)
 			gyroX = (gyroData[0]<<8)+gyroData[1];
 			gyroY = (gyroData[2]<<8)+gyroData[3];
 			gyroZ = (gyroData[4]<<8)+gyroData[5];
+			if(abs(gyroY)>2000){
+				BeUncomfortable();
+			}
 		}
 		if(statusMag == HAL_OK){
 			HAL_I2C_Mem_Read(&hi2c1, magAddress, magRegister-1, 1, &magDataRdy, 1, 100);
@@ -420,19 +426,38 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
+
+	HAL_NVIC_DisableIRQ(EXTI0_1_IRQn);
+
 	Hug();
+
+	__HAL_GPIO_EXTI_CLEAR_IT(GPIO_Pin);
+	HAL_NVIC_EnableIRQ(EXTI0_1_IRQn);
 }
 
 void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim){
+	if(htim == &htim1){
+		if(!eyesInverted){
+			HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin,GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(LED_BLUE_GPIO_Port, LED_BLUE_Pin,GPIO_PIN_RESET);
+		} else {
+			HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin,GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(LED_BLUE_GPIO_Port, LED_BLUE_Pin,GPIO_PIN_SET);
+		}
+	}
 
-	HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin,GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(LED_BLUE_GPIO_Port, LED_BLUE_Pin,GPIO_PIN_RESET);
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 	if (htim == &htim1){
-		HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_SET);
-		HAL_GPIO_WritePin(LED_BLUE_GPIO_Port, LED_BLUE_Pin,GPIO_PIN_SET);
+		if(!eyesInverted){
+			HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_SET);
+			HAL_GPIO_WritePin(LED_BLUE_GPIO_Port, LED_BLUE_Pin,GPIO_PIN_SET);
+		} else {
+			HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_SET);
+			HAL_GPIO_WritePin(LED_BLUE_GPIO_Port, LED_BLUE_Pin,GPIO_PIN_RESET);
+		}
+
 	} else if (htim == &htim2){
 		continueIt = true;
 	}
@@ -453,7 +478,6 @@ void DelayTime(uint32_t delay)
 }
 
 void Hug(){
-	HAL_NVIC_DisableIRQ(EXTI0_1_IRQn);
 
 	HAL_TIM_PWM_Stop_IT(&htim1, TIM_CHANNEL_4);
 	HAL_TIM_Base_Stop_IT(&htim1);
@@ -469,14 +493,40 @@ void Hug(){
 	HAL_TIM_PWM_Start_IT(&htim1, TIM_CHANNEL_4);
 	HAL_TIM_Base_Start_IT(&htim1);
 
-	HAL_NVIC_EnableIRQ(EXTI0_1_IRQn);
 }
 
 void EatCookie(){
+
+	HAL_NVIC_DisableIRQ(EXTI0_1_IRQn);
+
+	FlashEyes(2500, true);
+
+	__HAL_GPIO_EXTI_CLEAR_IT(BUTTON_1_Pin);
+	HAL_NVIC_EnableIRQ(EXTI0_1_IRQn);
+}
+
+void BeUncomfortable(){
+
+	HAL_NVIC_DisableIRQ(EXTI0_1_IRQn);
+	eyesInverted = true;
+
+	FlashEyes(2000, false);
+
+	FlashEyes(2000, false);
+
+	eyesInverted = false;
+
+	__HAL_GPIO_EXTI_CLEAR_IT(BUTTON_1_Pin);
+	HAL_NVIC_EnableIRQ(EXTI0_1_IRQn);
+}
+
+void FlashEyes(int duration, bool onlyBrighten ){
+
 	int initialCCR = TIM1->CCR4;
 	int maximumCCR = TIM1->ARR;
 	int stepCount = (maximumCCR-initialCCR)/10;
-	int delayBetweenSteps = 1250 / stepCount;
+	int countCycles = onlyBrighten?2:4;
+	int delayBetweenSteps = duration / stepCount / countCycles;
 
 	for (int i = 0; i < stepCount; i++){
 		TIM1->CCR4 = initialCCR + i*10;
@@ -486,6 +536,20 @@ void EatCookie(){
 	for (int i = 0; i < stepCount; i++){
 		TIM1->CCR4 = maximumCCR-i*10;
 		DelayTime(delayBetweenSteps);
+	}
+
+	if(!onlyBrighten){
+		for (int i = 0; i < stepCount; i++){
+			if ((initialCCR - i*10)<1) TIM1->CCR4 = 1;
+			else TIM1->CCR4 = initialCCR - i*10;
+			DelayTime(delayBetweenSteps);
+		}
+
+		for (int i = 1; i < stepCount; i++){
+			TIM1->CCR4 = i*10;
+			DelayTime(delayBetweenSteps);
+			if(TIM1->CCR4==initialCCR) break;
+		}
 	}
 	TIM1->CCR4 = initialCCR;
 }
