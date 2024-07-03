@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include<stdbool.h>
 #include<stdlib.h>
+#include<stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -163,7 +164,7 @@ int main(void)
 			magY = (magData[2]<<8)+magData[3];
 			magZ = (magData[4]<<8)+magData[5];
 			magAbs = (uint16_t)(abs(magX)+abs(magY)+abs(magZ));
-			if(magAbs>3000){
+			if(magAbs>5000){
 				EatCookie();
 			}
 		}
@@ -472,7 +473,21 @@ void Hug(){
 }
 
 void EatCookie(){
+	int initialCCR = TIM1->CCR4;
+	int maximumCCR = TIM1->ARR;
+	int stepCount = (maximumCCR-initialCCR)/10;
+	int delayBetweenSteps = 1250 / stepCount;
 
+	for (int i = 0; i < stepCount; i++){
+		TIM1->CCR4 = initialCCR + i*10;
+		DelayTime(delayBetweenSteps);
+	}
+
+	for (int i = 0; i < stepCount; i++){
+		TIM1->CCR4 = maximumCCR-i*10;
+		DelayTime(delayBetweenSteps);
+	}
+	TIM1->CCR4 = initialCCR;
 }
 /* USER CODE END 4 */
 
