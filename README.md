@@ -1,4 +1,4 @@
-# Interactive Teddy Bear - Microcontroller Practicum Project
+# Interactive Teddy Bear - Microcontroller Project
 ## Project Description
 
 This university project transforms a microcontroller into an interactive teddy bear that responds to physical interactions through expressive LED "eyes." The system uses green and blue LEDs to simulate the bear's eyes, which react dynamically to mutliple sensor inputs and user interactions.
